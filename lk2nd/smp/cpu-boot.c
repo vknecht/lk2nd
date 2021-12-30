@@ -28,6 +28,21 @@
 #define QCOM_SCM_BOOT_MC_FLAG_COLDBOOT	BIT(1)
 #define QCOM_SCM_BOOT_MC_FLAG_WARMBOOT	BIT(2)
 
+#define A53PLL_MODE_REG			0x00
+#define A53PLL_L_REG			0x04
+#define A53PLL_M_REG			0x08
+#define A53PLL_N_REG			0x0c
+#define A53PLL_USER_REG			0x10
+#define A53PLL_CONFIG_REG		0x14
+#define A53PLL_STATUS_REG		0x1c
+#define APCS_ALIAS0_CMD_RCGR		0xb111050
+#define APCS_ALIAS0_CFG_OFF		0x4
+#define APCS_ALIAS0_CORE_CBCR_OFF	0x8
+#define L2_PWR_CTL_OVERRIDE		0xc
+#define L2_PWR_CTL			0x14
+#define L2_PWR_STATUS			0x18
+#define L2_CORE_CBCR			0x58
+
 static inline uint32_t read_mpidr(void)
 {
 	uint32_t res;
@@ -90,4 +105,100 @@ void qcom_power_up_arm_cortex(uint32_t mpidr, uint32_t base)
 
 	/* Give CPU some time to boot */
 	udelay(100);
+}
+
+void qcom_power_up_l2cache(uint32_t base)
+{
+	dprintf(INFO, "Powering l2cache at %x\n", base);
+
+	if (readl(base + L2_PWR_STATUS) & 0x200) { // BIT(9)
+		dprintf(INFO, "L2 cache at %x already powered-up\n", base);
+		return;
+	}
+
+	writel(0x10d700, base + L2_PWR_CTL);
+	dsb();
+	writel(0x400000, base + L2_PWR_CTL_OVERRIDE);
+	dsb();
+	udelay(2);
+	writel(0x101700, base + L2_PWR_CTL);
+	dsb();
+	writel(0x101703, base + L2_PWR_CTL);
+	dsb();
+	udelay(2);
+	writel(0x1, base + L2_CORE_CBCR);
+	dsb();
+	writel(0x101603, base + L2_PWR_CTL);
+	dsb();
+	udelay(2);
+	writel(0x0, base + L2_PWR_CTL_OVERRIDE);
+	dsb();
+	writel(0x100203, base + L2_PWR_CTL);
+	dsb();
+	udelay(54);
+	writel(0x10100203, base + L2_PWR_CTL);
+	dsb();
+	writel(0x3, base + L2_CORE_CBCR);
+	dsb();
+
+	udelay(200);
+}
+
+void qcom_power_up_arm_cortex_pll(uint32_t base, uint32_t l, uint32_t m, uint32_t n, bool enable)
+{
+	dprintf(INFO, "Powering PLL (base=%d)\n", base);
+
+	/* Disable PLL to be safe for programming */
+	writel(0x0, base + A53PLL_MODE_REG);
+	dsb();
+
+	/* Configure L/M/N values with the first freq_tbl entry */
+	writel(l, base + A53PLL_L_REG);
+	dsb();
+	writel(m, base + A53PLL_M_REG);
+	dsb();
+	writel(n, base + A53PLL_N_REG);
+	dsb();
+
+	/* Configure USER_CTL and CONFIG_CTL value */
+	writel(0x0100000f, base + A53PLL_USER_REG);
+	dsb();
+	writel(0x4c015765, base + A53PLL_CONFIG_REG);
+	dsb();
+
+	if (enable) {
+		writel(0x2, base + A53PLL_MODE_REG);
+		dsb();
+		udelay(2);
+		writel(0x6, base + A53PLL_MODE_REG);
+		dsb();
+		udelay(50);
+		writel(0x7, base + A53PLL_MODE_REG);
+		dsb();
+	}
+}
+
+void qcom_power_up_arm_cortex_pll_power_clocks(void)
+{
+	uint32_t reg;
+
+	dprintf(INFO, "Powering PLL clocks\n");
+
+	/* Source GPLL0 and 1/2 the rate of GPLL0 */
+	writel(0x403, APCS_ALIAS0_CMD_RCGR + APCS_ALIAS0_CFG_OFF);
+	dsb();
+	reg = readl(APCS_ALIAS0_CMD_RCGR);
+	reg |= 0x1;
+	writel(reg, APCS_ALIAS0_CMD_RCGR);
+	dsb();
+	for (int count = 500; count > 0; count --) {
+		if (!(readl(APCS_ALIAS0_CMD_RCGR) & 0x1))
+			break;
+		udelay(1);
+	}
+	/* Enable the branch */
+	reg = readl(APCS_ALIAS0_CMD_RCGR + APCS_ALIAS0_CORE_CBCR_OFF);
+	reg |= 0x1;
+	writel(reg, APCS_ALIAS0_CMD_RCGR + APCS_ALIAS0_CORE_CBCR_OFF);
+	dsb();
 }

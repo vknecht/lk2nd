@@ -127,7 +127,8 @@ void smp_spin_table_setup(void *fdt)
 {
 	scmcall_arg arg = {PSCI_0_2_FN_PSCI_VERSION};
 	uint32_t psci_version;
-	int offset, node, ret;
+	int offset, node, ret, len;
+	const uint32_t *val;
 
 	if (!is_scm_armv8_support()) {
 		dprintf(INFO, "ARM64 not available, cannot use SMP spin table\n");
@@ -139,6 +140,40 @@ void smp_spin_table_setup(void *fdt)
 		dprintf(INFO, "PSCI v%d.%d detected, no need for SMP spin table\n",
 			PSCI_VERSION_MAJOR(psci_version), PSCI_VERSION_MINOR(psci_version));
 		return;
+	}
+
+	/* a53pll for cluster 0 (little) */
+	offset = fdt_path_offset(fdt, "/soc/clock@b116000");
+	if (offset < 0) {
+		dprintf(INFO, "Cannot find /soc/a53pll_c0: %d\n", node);
+	} else {
+		val = fdt_getprop(fdt, node, "reg", &len);
+		if (len < sizeof(*val)) {
+			dprintf(CRITICAL, "Cannot read reg property of a53pll_c0 node: %d\n", len);
+			return;
+		}
+
+		dprintf(INFO, "About to power up cluster...\n");
+		/* sr2 pll */
+		//qcom_power_up_arm_cortex_pll(fdt32_to_cpu(*val), 34, 0x0, 0x1, true);
+		//qcom_power_up_arm_cortex_pll_power_clocks();
+		/* cluster 0 pll */
+		//qcom_power_up_arm_cortex_pll(fdt32_to_cpu(*val), 52, 0x0, 0x1, true);
+	}
+
+	/* L2 cache for cluster 0 (little) */
+	offset = fdt_path_offset(fdt, "/soc/clock-controller@b111000");
+	if (offset < 0) {
+		dprintf(INFO, "Cannot find /soc/l2ccc_0: %d\n", node);
+	} else {
+		val = fdt_getprop(fdt, node, "reg", &len);
+		if (len < sizeof(*val)) {
+			dprintf(CRITICAL, "Cannot read reg property of l2ccc_0 node: %d\n", len);
+			return;
+		}
+
+		dprintf(INFO, "About to power up L2 cache...\n");
+		//qcom_power_up_l2cache(fdt32_to_cpu(*val));
 	}
 
 	offset = fdt_path_offset(fdt, "/cpus");

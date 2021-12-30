@@ -5,5 +5,8 @@
 
 int qcom_set_boot_addr(uint32_t addr);
 void qcom_power_up_arm_cortex(uint32_t mpidr, uint32_t base);
+void qcom_power_up_l2cache(uint32_t base);
+void qcom_power_up_arm_cortex_pll(uint32_t base, uint32_t l, uint32_t m, uint32_t n, bool restart);
+void qcom_power_up_arm_cortex_pll_power_clocks(void);
 
 #endif
